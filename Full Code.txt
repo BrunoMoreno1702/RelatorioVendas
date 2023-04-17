@@ -1,0 +1,412 @@
+Option Explicit
+
+Dim selectedFile As Variant
+Dim CaminhoDB As String
+Dim ConectaDB As ADODB.Connection
+Dim rs As ADODB.Recordset
+Dim ExcelApp As Object
+Dim wb As Object
+Dim ws As Object
+Dim LastRow As Long
+Dim i As Long
+Dim j As Long
+
+Private Sub Procurar_Click()
+
+   'Abre Dialog para importar planiha
+    selectedFile = Application.GetOpenFilename("Arquivos Excel (*.xlsx),*.xlsx")
+   
+   'Verifica se esta vazio
+    If VarType(selectedFile) = vbString And selectedFile <> "" Then
+
+       'Define conexão com o DB
+        CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+        Set ConectaDB = New ADODB.Connection
+        ConectaDB.Open CaminhoDB
+        
+        ' Cria tabela no banco de dados
+        ConectaDB.Execute "CREATE TABLE Vendas (Vendedor TEXT, Estado TEXT, Produtos TEXT, Total_de_vendas NUMERIC)"
+        
+        ' Importa dados da planilha para a tabela
+        Set ExcelApp = CreateObject("Excel.Application")
+        Set wb = ExcelApp.Workbooks.Open(selectedFile)
+        Set ws = wb.Worksheets(1)
+        
+        Set rs = New ADODB.Recordset
+        rs.Open "SELECT * FROM Vendas", ConectaDB, adOpenStatic, adLockOptimistic
+        
+       'Encontra ultima linha com dados na coluna A da tabela
+        LastRow = ws.Cells(ws.Rows.Count, "A").End(-4162).row
+        
+       'Loop pela planilha e adiciona os dados no DB
+        For i = 2 To LastRow
+            rs.AddNew
+            rs("Vendedor").Value = ws.Cells(i, 1).Value
+            rs("Estado").Value = ws.Cells(i, 2).Value
+            rs("Produtos").Value = ws.Cells(i, 3).Value
+            rs("Total_de_vendas").Value = ws.Cells(i, 4).Value
+            rs.Update
+        Next i
+        
+      'Fecha o RecordSet
+        rs.Close
+        Set rs = Nothing
+        
+       'Fecha o excel
+        wb.Close False
+        ExcelApp.Quit
+        Set wb = Nothing
+        Set ExcelApp = Nothing
+        
+       'Fecha conexão com DB e clear
+        ConectaDB.Close
+        Set ConectaDB = Nothing
+        
+        'Atualiza o Caption com Status do DB
+        STATUS.Caption = "Status DataBase: ON"
+       
+    Else
+        STATUS.ForeColor = vbRed
+        STATUS.Caption = "Nenhum arquivo selecionado."
+    End If
+
+End Sub
+
+Private Sub Form_Load()
+
+    Dim CaminhoDB As String
+    Dim rs As ADODB.Recordset
+    
+    'Cria Recordset
+    Set rs = New ADODB.Recordset
+    
+    'String de conexão com DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    ' Verificar conexão com o banco de dados
+    On Error GoTo ErrorHandler
+    rs.Open "SELECT 1", CaminhoDB
+    STATUS.Caption = "Status DataBase: ON"
+    
+ErrorHandler:
+    If Err.Number <> 0 Then MsgBox "Erro ao conectar ao banco de dados: " & Err.Description
+    
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
+Private Sub Relat_Vendedor_Click()
+
+    Dim CaminhoDB As String
+    Dim estado As String
+    Dim total_vendas As Double
+    Dim vendedor As String
+    Dim listItem As listItem
+    
+    'Cria um novo Recordset
+    Set rs = New ADODB.Recordset
+    
+    'String de conexão com DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    'Consulta com SELECT no DB
+    rs.Open "SELECT estado, vendedor, SUM(total_de_vendas) AS total_de_vendas FROM vendas GROUP BY estado, vendedor ORDER BY total_de_vendas DESC", CaminhoDB
+    
+    'Configura o ListView para exibir dados do DB
+    With Form2.ListView1
+        .View = lvwReport
+        .ColumnHeaders.Add , , "Estado"
+        .ColumnHeaders.Add , , "Vendedor"
+        .ColumnHeaders.Add , , "Total de vendas"
+        
+        'Adiciona os itens ao ListView
+        While Not rs.EOF
+            Set listItem = .ListItems.Add(, , rs("estado").Value)
+            listItem.SubItems(1) = rs("vendedor").Value
+            listItem.SubItems(2) = "R$ " & Format(rs("total_de_vendas").Value, "###,##0.00")
+            rs.MoveNext
+        Wend
+        
+        'Ajuste de colunas
+        .HideColumnHeaders = False
+        .ColumnHeaders(1).Width = 1000
+        .ColumnHeaders(2).Width = 1500
+        .ColumnHeaders(3).Width = 1500
+        
+        Form2.Show
+    End With
+    
+'Se ocorrer um erro ao conectar ao banco de dados, exibe uma mensagem de erro
+ErrorHandler:
+    If Err.Number <> 0 Then MsgBox "Erro ao conectar ao banco de dados: " & Err.Description
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
+Private Sub Relat_Vendas_Click()
+   
+    Dim CaminhoDB As String
+    Dim estado As String
+    Dim total_vendas As Double
+    Dim vendedor As String
+    Dim listItem As listItem
+    
+    'Definindo RecordSet
+    Set rs = New ADODB.Recordset
+    
+    'String de conexão com o DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    ' Consulta SELECT no DB
+    rs.Open "SELECT estado, produtos, SUM(total_de_vendas) AS total_de_vendas FROM vendas GROUP BY estado, produtos ORDER BY estado, total_de_vendas DESC", CaminhoDB
+    
+    'Configura o ListView para exibir dados do DB
+    With Form3.ListView2
+        .View = lvwReport
+        .ColumnHeaders.Add , , "Estado"
+        .ColumnHeaders.Add , , "Produto"
+        .ColumnHeaders.Add , , "Total em R$"
+        
+        'Adiciona os itens ao ListView
+        While Not rs.EOF
+            Set listItem = .ListItems.Add(, , rs("estado").Value)
+            listItem.SubItems(1) = rs("produtos").Value
+            listItem.SubItems(2) = "R$ " & Format(rs("total_de_vendas").Value, "###,##0.00")
+            rs.MoveNext
+        Wend
+        
+        'Ajuste de colunas
+        .HideColumnHeaders = False
+        .ColumnHeaders(1).Width = 1000
+        .ColumnHeaders(2).Width = 1500
+        .ColumnHeaders(3).Width = 1500
+        
+        Form3.Show
+        
+    End With
+    
+    'Fecha RecorSet
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
+Private Sub Relat_Estados_Click()
+
+    Dim CaminhoDB As String
+    Dim listItem As listItem
+    
+    'Definindo RecordSet
+    Set rs = New ADODB.Recordset
+    
+    'Definindo String de conexão com o DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    'Consulta SELECT no DB
+    rs.Open "SELECT estado, SUM(total_de_vendas) AS total_estado FROM vendas GROUP BY estado ORDER BY total_estado DESC", CaminhoDB
+    
+    'Configura o ListView para exibir os dados do DB
+    With Form4.ListView3
+        .View = lvwReport
+        .ColumnHeaders.Add , , "Estado"
+        .ColumnHeaders.Add , , "Total em R$"
+        
+        'Adiciona os itens ao ListView
+        While Not rs.EOF
+            Set listItem = .ListItems.Add(, , rs("estado").Value)
+            listItem.SubItems(1) = "R$ " & Format(rs("total_estado").Value, "###,##0.00")
+            rs.MoveNext
+        Wend
+        
+        'Ajuste de colunas
+        .HideColumnHeaders = False
+        .ColumnHeaders(1).Width = 1000
+        .ColumnHeaders(2).Width = 1500
+        
+        Form4.Show
+    End With
+    End Sub
+
+
+'BOTÂO DE DOWNLOAD FORM22
+
+Private Sub Command1_Click()
+
+    Dim row As Long
+    Dim filePath As String
+    Dim connString As String
+    Dim conn As ADODB.Connection
+    
+    ' Define conn como uma conexão ADODB
+    Set conn = New ADODB.Connection
+    
+    ' String de Conexão
+    connString = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    ' Conectar ao banco de dados
+    conn.Open connString
+    
+    'Define rs como Recordset para manipular o Database
+    Set rs = New ADODB.Recordset
+    
+    rs.Open "SELECT estado, vendedor, SUM(total_de_vendas) AS total_de_vendas FROM vendas GROUP BY estado, vendedor ORDER BY total_de_vendas DESC", conn
+    
+    ' Criar um novo objeto Excel
+    Set xlApp = CreateObject("Excel.Application")
+    
+    Set wb = xlApp.Workbooks.Add
+    
+    ' Adiciona uma nova planilha
+    Set ws = wb.Worksheets(1)
+    
+    ' Definir os títulos das colunas
+    ws.Cells(1, 1).Value = "Estado"
+    ws.Cells(1, 2).Value = "Vendedor"
+    ws.Cells(1, 3).Value = "Total de vendas"
+    
+    ' Preencher a planilha com os dados do relatório
+    row = 2 ' Começar na segunda linha (abaixo dos títulos das colunas)
+    
+    While Not rs.EOF
+        ws.Cells(row, 1).Value = rs("estado").Value
+        ws.Cells(row, 2).Value = rs("vendedor").Value
+        ws.Cells(row, 3).Value = "R$ " & Format(rs("total_de_vendas").Value, "###,##0.00")
+        row = row + 1
+        rs.MoveNext
+    Wend
+    
+    ' Abrindo Explorer para salvar o Relatório
+    filePath = xlApp.GetSaveAsFilename(InitialFileName:="Relatorio.xlsx", FileFilter:="Arquivos do Excel (*.xlsx), *.xlsx")
+    
+If Not IsEmpty(filePath) And filePath <> False Then ' Verifica se o usuario vai salvar ou não
+   
+    wb.SaveAs filePath
+    
+End If
+    
+ErrorHandler:
+    If Err.Number <> 0 Then MsgBox "Erro: " & Err.Description
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
+'BOTÃO DE DOWNLOAD FORM3:
+
+Private Sub Command2_Click()
+
+    Dim CaminhoDB As String
+    Dim estado As String
+    Dim total_vendas As Double
+    Dim vendedor As String
+    Dim listItem As listItem
+    Dim row As Long
+    Dim filePath As String
+    
+    'Definindo RecordSet
+    Set rs = New ADODB.Recordset
+    
+    'String de conexão com o DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    ' Consulta SELECT com o DB
+    rs.Open "SELECT estado, produtos, SUM(total_de_vendas) AS total_de_vendas FROM vendas GROUP BY estado, produtos ORDER BY estado, total_de_vendas DESC", CaminhoDB
+    
+    ' Criar um novo objeto Excel
+    Set xlApp = CreateObject("Excel.Application")
+    
+    Set wb = xlApp.Workbooks.Add
+    
+    ' Adicionar uma nova planilha
+    Set ws = wb.Worksheets(1)
+    
+    ' Definir os títulos das colunas
+    ws.Cells(1, 1).Value = "Estado"
+    ws.Cells(1, 2).Value = "Produto"
+    ws.Cells(1, 3).Value = "Total em R$"
+    
+    ' Preencher a planilha com os dados do relatório
+    row = 2
+    
+    While Not rs.EOF
+        ws.Cells(row, 1).Value = rs("estado").Value
+        ws.Cells(row, 2).Value = rs("produtos").Value
+        ws.Cells(row, 3).Value = "R$ " & Format(rs("total_de_vendas").Value, "###,##0.00")
+        row = row + 1
+        rs.MoveNext
+    Wend
+    
+    ' Exibir a caixa de diálogo para selecionar o local para salvar o arquivo
+    filePath = xlApp.GetSaveAsFilename(InitialFileName:="Relatorio.xlsx", FileFilter:="Arquivos do Excel (*.xlsx), *.xlsx")
+    
+    'Verifica se o usuario selecionou algo
+    If Not IsEmpty(filePath) And filePath <> False Then
+        
+        'Salva o arquivo
+        wb.SaveAs filePath
+        
+    End If
+
+'Tentaiva de ajuste de erros
+ErrorHandler:
+    If Err.Number <> 0 Then MsgBox "Erro ao conectar ao banco de dados: " & Err.Description
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
+'BOTÃO DE DOWNLOAD FORM4:
+
+Private Sub Command3_Click()
+
+    Dim CaminhoDB As String
+    Dim listItem As listItem
+    Dim row As Long
+    Dim filePath As String
+    
+    'Definindo o RecordSet
+    Set rs = New ADODB.Recordset
+    
+    'String de conexão com o DB
+    CaminhoDB = "DSN=PostgreSQL30;Database=Cadastro;Server=localhost;Uid=postgres;Port=5432;pwd=123;"
+    
+    rs.Open "SELECT estado, SUM(total_de_vendas) AS total_estado FROM vendas GROUP BY estado ORDER BY total_estado DESC", CaminhoDB
+    
+    ' Criar planilha
+    Set xlApp = CreateObject("Excel.Application")
+    Set wb = xlApp.Workbooks.Add
+    Set ws = wb.Worksheets(1)
+    
+    ' Definir os títulos das colunas
+    ws.Cells(1, 1).Value = "Estado"
+    ws.Cells(1, 2).Value = "Total em R$"
+    
+    row = 2
+    
+    While Not rs.EOF
+        ws.Cells(row, 1).Value = rs("estado").Value
+        ws.Cells(row, 2).Value = "R$ " & Format(rs("total_estado").Value, "###,##0.00")
+        row = row + 1
+        rs.MoveNext
+    Wend
+    
+    ' Exibir o Dialog para o usuario salvar a planilha
+    filePath = xlApp.GetSaveAsFilename(InitialFileName:="Relatorio.xlsx", FileFilter:="Arquivos do Excel (*.xlsx), *.xlsx")
+    
+    'Verifica se o usuario selecionou algo
+    If Not IsEmpty(filePath) And filePath <> False Then
+    
+        ' Salva o arquivo
+        wb.SaveAs filePath
+    End If
+
+'Tentativa de trativa de erros:
+ErrorHandler:
+    If Err.Number <> 0 Then MsgBox "Erro ao conectar ao banco de dados: " & Err.Description
+    rs.Close
+    Set rs = Nothing
+    
+End Sub
+
